@@ -4,7 +4,7 @@ use avian2d::prelude::*;
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_ecs_ldtk::prelude::*;
 
-use crate::player::{self, Player};
+use crate::player::{self, CharacterMovementSettings, Player};
 
 const WORLD_PATH: &str = "world.ldtk";
 const PIXELS_PER_METER: f32 = 16.0;
@@ -66,6 +66,7 @@ fn spawn_player_at_spawn_point(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    movement_settings: Res<CharacterMovementSettings>,
     spawn_points: Query<(Entity, &GlobalTransform), With<PlayerSpawn>>,
     players: Query<Entity, With<Player>>,
 ) {
@@ -95,7 +96,13 @@ fn spawn_player_at_spawn_point(
             spawn_entity, translation
         );
 
-        player::spawn_player(&mut commands, &mut meshes, &mut materials, translation);
+        player::spawn_player(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &movement_settings,
+            translation,
+        );
         break;
     }
 }

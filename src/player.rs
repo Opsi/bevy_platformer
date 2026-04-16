@@ -1,5 +1,6 @@
 use avian2d::{math::*, prelude::*};
 use bevy::prelude::*;
+use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 
 const PLAYER_RADIUS: f32 = 0.35;
 const PLAYER_LENGTH: f32 = 1.10;
@@ -18,24 +19,25 @@ pub struct Player;
 )]
 struct CharacterController;
 
-#[derive(Component)]
-struct CharacterMovementSettings {
-    max_run_speed: Scalar,
-    run_acceleration: Scalar,
-    run_damping: Scalar,
-    jump_speed: Scalar,
-    gravity: Vector,
-    terminal_velocity: Scalar,
+#[derive(Component, Resource, Clone, Reflect)]
+#[reflect(Component, Resource)]
+pub struct CharacterMovementSettings {
+    pub max_run_speed: Scalar,
+    pub run_acceleration: Scalar,
+    pub run_damping: Scalar,
+    pub jump_speed: Scalar,
+    pub gravity: Vec2,
+    pub terminal_velocity: Scalar,
 }
 
 impl Default for CharacterMovementSettings {
     fn default() -> Self {
         Self {
-            max_run_speed: 7.5,
+            max_run_speed: 9.0,
             run_acceleration: 45.0,
-            run_damping: 10.0,
-            jump_speed: 8.5,
-            gravity: Vector::new(0.0, -24.0),
+            run_damping: 20.0,
+            jump_speed: 10.5,
+            gravity: Vec2::new(0.0, -24.0),
             terminal_velocity: 18.0,
         }
     }
@@ -73,8 +75,12 @@ struct PlayerInputState {
 
 pub(super) fn plugin(app: &mut App) {
     app.register_type::<Player>()
+        .register_type::<CharacterMovementSettings>()
         .init_resource::<PlayerInputState>()
+        .init_resource::<CharacterMovementSettings>()
+        .add_plugins(ResourceInspectorPlugin::<CharacterMovementSettings>::default())
         .add_systems(PreUpdate, collect_player_input)
+        .add_systems(Update, sync_movement_settings)
         .add_systems(
             FixedUpdate,
             (
@@ -94,21 +100,35 @@ pub fn spawn_player(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    movement_settings: &CharacterMovementSettings,
     translation: Vec3,
 ) -> Entity {
     commands
         .spawn((
-        Player,
-        CharacterController,
-        CharacterMovementSettings::default(),
-        GroundDetection::default(),
-        LinearVelocity::ZERO,
-        Collider::capsule(PLAYER_RADIUS, PLAYER_LENGTH),
-        Mesh2d(meshes.add(Capsule2d::new(PLAYER_RADIUS, PLAYER_LENGTH))),
-        MeshMaterial2d(materials.add(Color::srgb(0.82, 0.24, 0.22))),
-        Transform::from_translation(translation),
-    ))
+            Player,
+            CharacterController,
+            movement_settings.clone(),
+            GroundDetection::default(),
+            LinearVelocity::ZERO,
+            Collider::capsule(PLAYER_RADIUS, PLAYER_LENGTH),
+            Mesh2d(meshes.add(Capsule2d::new(PLAYER_RADIUS, PLAYER_LENGTH))),
+            MeshMaterial2d(materials.add(Color::srgb(0.82, 0.24, 0.22))),
+            Transform::from_translation(translation),
+        ))
         .id()
+}
+
+fn sync_movement_settings(
+    movement_settings: Res<CharacterMovementSettings>,
+    mut query: Query<&mut CharacterMovementSettings, With<CharacterController>>,
+) {
+    if !movement_settings.is_changed() {
+        return;
+    }
+
+    for mut player_settings in &mut query {
+        *player_settings = movement_settings.clone();
+    }
 }
 
 fn collect_player_input(
@@ -190,7 +210,7 @@ fn apply_gravity(
     let delta_secs = time.delta_secs_f64().adjust_precision();
 
     for (movement, mut linear_velocity) in &mut query {
-        linear_velocity.0 += movement.gravity * delta_secs;
+        linear_velocity.0 += movement.gravity.adjust_precision() * delta_secs;
         linear_velocity.y = linear_velocity
             .y
             .max(-movement.terminal_velocity)
