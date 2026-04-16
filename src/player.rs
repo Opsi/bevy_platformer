@@ -1,8 +1,8 @@
 use avian2d::{math::*, prelude::*};
 use bevy::prelude::*;
 
-const PLAYER_RADIUS: f32 = 12.5;
-const PLAYER_LENGTH: f32 = 20.0;
+const PLAYER_RADIUS: f32 = 0.35;
+const PLAYER_LENGTH: f32 = 1.10;
 
 #[derive(Component, Default, Reflect)]
 #[require(Transform, Visibility)]
@@ -31,12 +31,12 @@ struct CharacterMovementSettings {
 impl Default for CharacterMovementSettings {
     fn default() -> Self {
         Self {
-            max_run_speed: 225.0,
-            run_acceleration: 1800.0,
-            run_damping: 12.0,
-            jump_speed: 450.0,
-            gravity: Vector::new(0.0, -1400.0),
-            terminal_velocity: 900.0,
+            max_run_speed: 7.5,
+            run_acceleration: 45.0,
+            run_damping: 10.0,
+            jump_speed: 8.5,
+            gravity: Vector::new(0.0, -24.0),
+            terminal_velocity: 18.0,
         }
     }
 }
@@ -55,7 +55,7 @@ impl Default for GroundDetection {
 
         Self {
             max_angle: PI / 6.0,
-            max_distance: 4.0,
+            max_distance: 0.08,
             cast_shape,
         }
     }
@@ -105,7 +105,7 @@ fn spawn_player(
         Collider::capsule(PLAYER_RADIUS, PLAYER_LENGTH),
         Mesh2d(meshes.add(Capsule2d::new(PLAYER_RADIUS, PLAYER_LENGTH))),
         MeshMaterial2d(materials.add(Color::srgb(0.82, 0.24, 0.22))),
-        Transform::from_xyz(0.0, -110.0, 1.0),
+        Transform::from_xyz(-12.0, -0.5, 1.0),
     ));
 }
 
@@ -210,7 +210,7 @@ fn apply_horizontal_damping(
     for (movement, mut linear_velocity) in &mut query {
         linear_velocity.x *= 1.0 / (1.0 + movement.run_damping * delta_secs);
 
-        if linear_velocity.x.abs() < 0.5 {
+        if linear_velocity.x.abs() < 0.05 {
             linear_velocity.x = 0.0;
         }
     }
@@ -220,11 +220,20 @@ fn move_player(
     time: Res<Time>,
     move_and_slide: MoveAndSlide,
     mut query: Query<
-        (Entity, &Collider, &mut Transform, &mut LinearVelocity),
+        (
+            Entity,
+            &GroundDetection,
+            &Collider,
+            &mut Transform,
+            &mut LinearVelocity,
+        ),
         With<CharacterController>,
     >,
 ) {
-    for (entity, collider, mut transform, mut linear_velocity) in &mut query {
+    for (entity, ground_detection, collider, mut transform, mut linear_velocity) in &mut query {
+        let mut hit_ground_or_ceiling = false;
+        let up = transform.up().xy().adjust_precision();
+
         let MoveAndSlideOutput {
             position,
             projected_velocity,
@@ -236,14 +245,77 @@ fn move_player(
             time.delta(),
             &MoveAndSlideConfig::default(),
             &SpatialQueryFilter::from_excluded_entities([entity]),
-            |_| MoveAndSlideHitResponse::Accept,
+            |hit| {
+                let angle = up.angle_to(hit.normal.adjust_precision()).abs();
+                let is_ground = angle <= ground_detection.max_angle;
+                let is_ceiling = angle >= PI - ground_detection.max_angle;
+
+                let [horizontal_component, vertical_component] =
+                    split_into_components(linear_velocity.0, up);
+
+                let horizontal_velocity_decomposition =
+                    decompose_hit_velocity(horizontal_component, *hit.normal);
+                let decomposition = decompose_hit_velocity(*hit.velocity, *hit.normal);
+
+                let slipping_intent =
+                    up.dot(horizontal_velocity_decomposition.tangent_part) < -0.001;
+                let slipping = up.dot(decomposition.tangent_part) < -0.001;
+                let climbing_intent = up.dot(vertical_component) > 0.0;
+                let climbing = up.dot(decomposition.tangent_part) > 0.0;
+
+                let projected_velocity = if !is_ground && climbing && !climbing_intent {
+                    decomposition.normal_part
+                } else if is_ground && slipping && !slipping_intent {
+                    decomposition.normal_part
+                } else {
+                    decomposition.normal_part + decomposition.tangent_part
+                };
+
+                *hit.velocity = projected_velocity;
+
+                if is_ground || is_ceiling {
+                    hit_ground_or_ceiling = true;
+                }
+
+                MoveAndSlideHitResponse::Accept
+            },
         );
 
         transform.translation = position.f32().extend(transform.translation.z);
-        linear_velocity.0 = projected_velocity;
+
+        if hit_ground_or_ceiling {
+            let velocity_along_up = linear_velocity.dot(up);
+            let new_velocity_along_up = projected_velocity.dot(up);
+            linear_velocity.0 += (new_velocity_along_up - velocity_along_up) * up;
+        } else {
+            linear_velocity.0 = projected_velocity;
+        }
     }
 }
 
 fn clear_jump_queue(mut input_state: ResMut<PlayerInputState>) {
     input_state.jump_queued = false;
+}
+
+#[derive(Debug)]
+struct VelocityDecomposition {
+    normal_part: Vector,
+    tangent_part: Vector,
+}
+
+fn decompose_hit_velocity(velocity: Vector, normal: Dir) -> VelocityDecomposition {
+    let normal = normal.adjust_precision();
+    let normal_part = normal * normal.dot(velocity);
+    let tangent_part = velocity - normal_part;
+
+    VelocityDecomposition {
+        normal_part,
+        tangent_part,
+    }
+}
+
+fn split_into_components(v: Vector, up: Vector) -> [Vector; 2] {
+    let vertical_component = up * v.dot(up);
+    let horizontal_component = v - vertical_component;
+    [horizontal_component, vertical_component]
 }
