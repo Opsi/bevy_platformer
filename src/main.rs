@@ -1,15 +1,15 @@
 use bevy::prelude::*;
 
-mod level;
+mod game;
 mod physics;
 mod player;
 
 fn main() {
     App::new()
         .add_plugins((
-            DefaultPlugins,
+            DefaultPlugins.set(ImagePlugin::default_nearest()),
+            game::plugin,
             player::plugin,
-            level::plugin,
             physics::plugin,
         ))
         .run();

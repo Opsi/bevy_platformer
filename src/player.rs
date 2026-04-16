@@ -74,7 +74,6 @@ struct PlayerInputState {
 pub(super) fn plugin(app: &mut App) {
     app.register_type::<Player>()
         .init_resource::<PlayerInputState>()
-        .add_systems(Startup, spawn_player)
         .add_systems(PreUpdate, collect_player_input)
         .add_systems(
             FixedUpdate,
@@ -91,12 +90,14 @@ pub(super) fn plugin(app: &mut App) {
         );
 }
 
-fn spawn_player(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    commands.spawn((
+pub fn spawn_player(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    translation: Vec3,
+) -> Entity {
+    commands
+        .spawn((
         Player,
         CharacterController,
         CharacterMovementSettings::default(),
@@ -105,8 +106,9 @@ fn spawn_player(
         Collider::capsule(PLAYER_RADIUS, PLAYER_LENGTH),
         Mesh2d(meshes.add(Capsule2d::new(PLAYER_RADIUS, PLAYER_LENGTH))),
         MeshMaterial2d(materials.add(Color::srgb(0.82, 0.24, 0.22))),
-        Transform::from_xyz(-12.0, -0.5, 1.0),
-    ));
+        Transform::from_translation(translation),
+    ))
+        .id()
 }
 
 fn collect_player_input(
