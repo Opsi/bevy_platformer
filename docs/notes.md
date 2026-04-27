@@ -1,0 +1,1 @@
+- Resolution: 640x360 (for 16:9)

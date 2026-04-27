@@ -1,3 +1,4 @@
+use avian2d::prelude::*;
 use bevy::{
     color::palettes::tailwind::{CYAN_500, ORANGE_500},
     prelude::*,
@@ -48,6 +49,7 @@ pub fn on_player_root_spawned(
             Mesh2d(meshes.add(player_feet.to_ring(5.))),
             MeshMaterial2d(materials.add(Color::Srgba(ORANGE_500))),
             Transform::from_xyz(0., player_feet.half_size.y, -0.5),
+            Collider::rectangle(60., 40.),
         ));
 
         // spawn the player body
@@ -62,6 +64,7 @@ pub fn on_player_root_spawned(
                 player_body.half_length + player_body.radius + player_feet.half_size.y,
                 -0.5,
             ),
+            Collider::capsule(40., 60.),
         ));
     });
 }
